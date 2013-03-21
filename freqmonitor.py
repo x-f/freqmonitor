@@ -7,7 +7,7 @@ from time import time
 from rtlsdr import *
 from pylab import *
 
-
+	
 def main():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("-d", "--device", type=int, default = 0, help="device index")
@@ -70,18 +70,15 @@ def main():
 		frequency_list.append(range)
 	print frequency_list
 
-  
+
 	try:
 		sdr = RtlSdr(deviceID)
 	except:
 		print "Failed to create object for SDR"
 		sys.exit(2)
 
-
-	#freq = start_freq
 	sdr.rs = sample_rate
 	sdr.gain = gain
-	# ppm
 
 	try:
 		cnt = 0
@@ -96,12 +93,15 @@ def main():
 				except:
 					print "Failed to create object for SDR"
 					sys.exit(2)
+
+				sdr.rs = sample_rate
+				sdr.gain = gain
 				cnt = 1
 				
 			for range in frequency_list:
 				freq = start_freq = range[0]
 				end_freq = range[1]
-				print str(cnt),
+				
 				print 'Scanning ' + str(start_freq) + ' to ' + str(end_freq) + ' in ' + str(step) + ' MHz steps..',
 				starttime = time()
 				
