@@ -15,9 +15,10 @@ def main():
 	parser.add_argument("-e", "--end_freq", type=float, help="ending frequency (MHz)")
 	parser.add_argument("-fl", "--flist", type=str, help="if not start and end freqs, then a range of frequencies to scan (\"24-30,400-410\")")
 	parser.add_argument("-i", "--step", type=float, default = 1, help="step between sampling (MHz)")
-	parser.add_argument("-t", "--readtimes", type=int, default = 1, help="times to read samples for one frequency")
+	parser.add_argument("-t", "--readtimes", type=int, default = 1, help="times to read samples on one frequency for averaging")
 	parser.add_argument("-r", "--sample_rate", type=float, default = 2.4, help="sample rate (Mbps)")
 	parser.add_argument("-g", "--gain", type=int, default = 10, help="gain")
+	parser.add_argument("-rst", "--reset_every", type=int, default = 0, help="after how many cycles reconnect the device")
 	parser.add_argument("-ld", "--log_dir", type=str, default = ".", help="existing directory for logfiles")
 	args = parser.parse_args()
 	
@@ -55,6 +56,9 @@ def main():
 	if args.gain:
 		gain = args.gain
 
+	if args.reset_every:
+		reset_every = args.reset_every
+
 	if args.log_dir:
 		directory = args.log_dir
 
@@ -66,7 +70,7 @@ def main():
 		frequency_list.append(range)
 	print frequency_list
 
-    
+  
 	try:
 		sdr = RtlSdr(deviceID)
 	except:
@@ -80,11 +84,24 @@ def main():
 	# ppm
 
 	try:
+		cnt = 0
 		while True:
+			
+			# reset the device
+			cnt = cnt + 1;
+			if cnt > reset_every and reset_every > 0:
+				sdr.close()
+				try:
+					sdr = RtlSdr(deviceID)
+				except:
+					print "Failed to create object for SDR"
+					sys.exit(2)
+				cnt = 1
+				
 			for range in frequency_list:
 				freq = start_freq = range[0]
 				end_freq = range[1]
-				
+				print str(cnt),
 				print 'Scanning ' + str(start_freq) + ' to ' + str(end_freq) + ' in ' + str(step) + ' MHz steps..',
 				starttime = time()
 				
@@ -124,6 +141,7 @@ def main():
 	except:
 		print "Unexpected error:", sys.exc_info()[0]
 
+	sdr.close()
 	sys.exit(2)
 	
 
