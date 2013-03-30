@@ -19,6 +19,7 @@ def main():
 	parser.add_argument("-r", "--sample_rate", type=float, default = 2.4, help="sample rate (Mbps)")
 	parser.add_argument("-g", "--gain", type=int, default = 10, help="gain")
 	parser.add_argument("-rst", "--reset_every", type=int, default = 0, help="after how many cycles reconnect the device")
+	parser.add_argument("-w", "--io_write_every", type=int, default = 0, help="after how many cycles write data to file")
 	parser.add_argument("-ld", "--log_dir", type=str, default = ".", help="existing directory for logfiles")
 	args = parser.parse_args()
 	
@@ -56,8 +57,13 @@ def main():
 	if args.gain:
 		gain = args.gain
 
+	reset_every = int(0)
 	if args.reset_every:
 		reset_every = args.reset_every
+
+	io_write_every = int(0)
+	if args.io_write_every:
+		io_write_every = args.io_write_every
 
 	if args.log_dir:
 		directory = args.log_dir
@@ -79,11 +85,19 @@ def main():
 
 	sdr.rs = sample_rate
 	sdr.gain = gain
+	# warm up
+	for i in xrange(0, 3):
+		sdr.read_samples(2**16)
+
+	datastring_buffer = str()
 
 	try:
 		cnt = 0
+		io_cnt = 0
+		
 		while True:
 			
+			io_cnt = io_cnt + 1					
 			# reset the device
 			cnt = cnt + 1;
 			if cnt > reset_every and reset_every > 0:
@@ -96,6 +110,8 @@ def main():
 
 				sdr.rs = sample_rate
 				sdr.gain = gain
+				# warm up
+				sdr.read_samples(2**16)
 				cnt = 1
 				
 			for range in frequency_list:
@@ -125,21 +141,31 @@ def main():
 				freq = start_freq
 
 				# print datastring
-				logfile = directory + '/' + 'scan-' + str(start_freq) + '-' + str(end_freq) + '.log'
-				f = open(logfile, 'a+')
-				f.write(datastring)
-
-				# logfile = directory + '/' + 'all.log'
+				# logfile = directory + '/' + 'scan-' + str(start_freq) + '-' + str(end_freq) + '.log'
 				# f = open(logfile, 'a+')
 				# f.write(datastring)
-				
+				datastring_buffer += datastring
+
 				print " 	done in " + str(round(time() - starttime, 1)) + " seconds"
-				
+
+			# write data to file
+			if io_cnt == io_write_every:
+				logfile = directory + '/' + 'scan-' + str(start_freq) + '-' + str(end_freq) + '.log'
+				f = open(logfile, 'a+')
+				f.write(datastring_buffer)
+				datastring_buffer = str()
+				io_cnt = 0
+				# print "I/O"
 			
 	except KeyboardInterrupt:
 		print "\nstopped"
-	except:
-		print "Unexpected error:", sys.exc_info()[0]
+		if datastring_buffer != "":
+			logfile = directory + '/' + 'scan-' + str(start_freq) + '-' + str(end_freq) + '.log'
+			f = open(logfile, 'a+')
+			f.write(datastring_buffer)
+
+	#except:
+	#	print "Unexpected error:", sys.exc_info()[0]
 
 	sdr.close()
 	sys.exit(2)
