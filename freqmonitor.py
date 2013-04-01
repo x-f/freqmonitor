@@ -3,7 +3,8 @@
 # from __future__ import print_function
 import sys
 import argparse
-from time import time
+import gc
+from time import time, gmtime, strftime
 from rtlsdr import *
 from pylab import *
 
@@ -15,6 +16,7 @@ def main():
 	parser.add_argument("-e", "--end_freq", type=float, help="ending frequency (MHz)")
 	parser.add_argument("-fl", "--flist", type=str, help="if not start and end freqs, then a range of frequencies to scan (\"24-30,400-410\")")
 	parser.add_argument("-i", "--step", type=float, default = 1, help="step between sampling (MHz)")
+	parser.add_argument("-single", "--single_freq", type=bool, default = False, help="scan only single frequency (speeds up scanning)")
 	parser.add_argument("-t", "--readtimes", type=int, default = 1, help="times to read samples on one frequency for averaging")
 	parser.add_argument("-r", "--sample_rate", type=float, default = 2.4, help="sample rate (Mbps)")
 	parser.add_argument("-g", "--gain", type=int, default = 10, help="gain")
@@ -48,6 +50,9 @@ def main():
 	if args.step:
 		step = args.step
 
+	if args.single_freq:
+		single_freq = args.single_freq
+
 	if args.readtimes:
 		readtimes = args.readtimes
 	
@@ -78,20 +83,28 @@ def main():
 
 
 	try:
+		print >> sys.stderr, strftime("%H:%M:%S", gmtime()) + " ",
 		sdr = RtlSdr(deviceID)
 	except:
 		print "Failed to create object for SDR"
 		sys.exit(2)
 
-	sdr.rs = sample_rate
-	sdr.gain = gain
-	# warm up
-	for i in xrange(0, 3):
-		sdr.read_samples(2**16)
 
 	datastring_buffer = str()
 
 	try:
+		sdr.rs = sample_rate
+		sdr.gain = gain
+		sdr.fc = 100e6
+
+		# warm up
+		print "warming up.."
+		for i in xrange(0, 120):
+			# sdr.read_samples(2**16)
+			sdr.read_samples(2**16)
+			# print ".",
+		print "starting scan"
+
 		cnt = 0
 		io_cnt = 0
 		
@@ -101,8 +114,10 @@ def main():
 			# reset the device
 			cnt = cnt + 1;
 			if cnt > reset_every and reset_every > 0:
+				cnt = 1
 				sdr.close()
 				try:
+					print >> sys.stderr, strftime("%H:%M:%S", gmtime()) + " ",
 					sdr = RtlSdr(deviceID)
 				except:
 					print "Failed to create object for SDR"
@@ -110,9 +125,11 @@ def main():
 
 				sdr.rs = sample_rate
 				sdr.gain = gain
+				sdr.fc = 100e6
+
 				# warm up
-				sdr.read_samples(2**16)
-				cnt = 1
+				# for i in xrange(0, 60):
+					# sdr.read_samples(2**16)
 				
 			for range in frequency_list:
 				freq = start_freq = range[0]
@@ -123,17 +140,30 @@ def main():
 				
 				datastring = str()
 				while freq <= end_freq:
-					# print freq
-					sdr.fc = freq * 1000000
-				
+					try:
+						if cnt <= 1:
+							# print "setting freq"
+							sdr.fc = freq * 1000000
+					except:
+						print "Warning: center frequency not set, trying.."
+						try:
+							sdr.fc = freq * 1000000
+						except:
+							print "Failed to set center frequency of " + freq * 1000000
+							sys.exit(2)
+						
 					timestamp = time()
 
 					tmp = 0
 					for x in xrange(1, readtimes + 1):
-						tmp += 10 * log10(var(sdr.read_samples(2**16)))
+						# tmp += 10 * log10(var(sdr.read_samples(2**16)))
+						tmp += 10 * log10(var(sdr.read_samples(2**12)))
 					signal_strength = tmp / readtimes
-									
-					datastring += str(timestamp) + ' ' + str(freq) + ' ' + str(round(signal_strength, 2)) + ' ' + str(gain) + '\n'
+					
+					if cnt > 1:
+						datastring += str(timestamp) + ' ' + str(freq) + ' ' + str(round(signal_strength, 2)) + ' ' + str(gain) + '\n'
+					# else:
+						# print "skipping"
 					
 					freq += step
 			
@@ -147,12 +177,15 @@ def main():
 				datastring_buffer += datastring
 
 				print " 	done in " + str(round(time() - starttime, 1)) + " seconds"
+				
+				gc.collect()
 
 			# write data to file
 			if io_cnt == io_write_every:
 				logfile = directory + '/' + 'scan-' + str(start_freq) + '-' + str(end_freq) + '.log'
 				f = open(logfile, 'a+')
 				f.write(datastring_buffer)
+				f.flush()
 				datastring_buffer = str()
 				io_cnt = 0
 				# print "I/O"
